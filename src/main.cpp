@@ -15,6 +15,8 @@ constexpr uint8_t TFT_SCLK_PIN = 19;
 
 constexpr uint16_t SCREEN_REFRESH_MS = 1000;
 constexpr uint16_t HX711_STARTUP_TIMEOUT_MS = 2000;
+constexpr long HX711_MAX_RAW = 8388607L;
+constexpr long HX711_MIN_RAW = -8388608L;
 constexpr uint16_t TFT_BG_COLOR = ST77XX_BLACK;
 constexpr uint16_t TFT_VALUE_READY_COLOR = ST77XX_GREEN;
 constexpr uint16_t TFT_VALUE_ERROR_COLOR = ST77XX_RED;
@@ -32,6 +34,10 @@ HX711 scale;
 Adafruit_ST7735 tft(TFT_CS_PIN, TFT_DC_PIN, TFT_RST_PIN);
 
 unsigned long lastRefreshAt = 0;
+
+bool isSaturatedReading(long rawValue) {
+  return rawValue == HX711_MAX_RAW || rawValue == HX711_MIN_RAW;
+}
 
 void maskDisplayEdges() {
   tft.fillRect(SCREEN_WIDTH - RIGHT_EDGE_MASK_WIDTH, 0, RIGHT_EDGE_MASK_WIDTH, SCREEN_HEIGHT, TFT_BG_COLOR);
@@ -60,9 +66,12 @@ void drawReading(long rawValue, bool hx711Ready) {
   tft.setTextSize(1);
   tft.setTextWrap(false);
 
-  if (hx711Ready) {
+  if (hx711Ready && !isSaturatedReading(rawValue)) {
     tft.setTextColor(TFT_VALUE_READY_COLOR, TFT_BG_COLOR);
     tft.println(rawValue);
+  } else if (hx711Ready) {
+    tft.setTextColor(TFT_VALUE_ERROR_COLOR, TFT_BG_COLOR);
+    tft.println(F("saturated"));
   } else {
     tft.setTextColor(TFT_VALUE_ERROR_COLOR, TFT_BG_COLOR);
     tft.println(F("not ready"));
@@ -116,8 +125,14 @@ void loop() {
 
   if (hx711Ready) {
     rawValue = scale.read_average(5);
-    Serial.print(F("HX711 raw: "));
-    Serial.println(rawValue);
+    if (isSaturatedReading(rawValue)) {
+      Serial.print(F("HX711 raw saturated: "));
+      Serial.println(rawValue);
+      Serial.println(F("Check E+/E-/A+/A- wiring, load-cell combiner wiring, and HX711 supply voltage."));
+    } else {
+      Serial.print(F("HX711 raw: "));
+      Serial.println(rawValue);
+    }
   } else {
     Serial.println(F("HX711 not ready"));
   }
