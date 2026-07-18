@@ -20,28 +20,34 @@ constexpr long HX711_MIN_RAW = -8388608L;
 constexpr uint16_t TFT_BG_COLOR = ST77XX_BLACK;
 constexpr uint16_t TFT_VALUE_READY_COLOR = ST77XX_GREEN;
 constexpr uint16_t TFT_VALUE_ERROR_COLOR = ST77XX_RED;
+constexpr uint8_t TFT_ROTATION = 1;
+constexpr int8_t TFT_COL_START = 2;
+constexpr int8_t TFT_ROW_START = 1;
 
 constexpr int16_t SCREEN_WIDTH = 160;
 constexpr int16_t SCREEN_HEIGHT = 128;
-constexpr int16_t RIGHT_EDGE_MASK_WIDTH = 1;
-constexpr int16_t BOTTOM_EDGE_MASK_HEIGHT = 2;
 constexpr int16_t VALUE_BOX_X = 0;
 constexpr int16_t VALUE_BOX_Y = 52;
-constexpr int16_t VALUE_BOX_W = SCREEN_WIDTH - RIGHT_EDGE_MASK_WIDTH;
+constexpr int16_t VALUE_BOX_W = SCREEN_WIDTH;
 constexpr int16_t VALUE_BOX_H = 18;
 
 HX711 scale;
-Adafruit_ST7735 tft(TFT_CS_PIN, TFT_DC_PIN, TFT_RST_PIN);
+class SmartScaleDisplay : public Adafruit_ST7735 {
+public:
+  using Adafruit_ST7735::Adafruit_ST7735;
+
+  void applyPanelOffset(int8_t colStart, int8_t rowStart, uint8_t rotation) {
+    setColRowStart(colStart, rowStart);
+    setRotation(rotation);
+  }
+};
+
+SmartScaleDisplay tft(TFT_CS_PIN, TFT_DC_PIN, TFT_RST_PIN);
 
 unsigned long lastRefreshAt = 0;
 
 bool isSaturatedReading(long rawValue) {
   return rawValue == HX711_MAX_RAW || rawValue == HX711_MIN_RAW;
-}
-
-void maskDisplayEdges() {
-  tft.fillRect(SCREEN_WIDTH - RIGHT_EDGE_MASK_WIDTH, 0, RIGHT_EDGE_MASK_WIDTH, SCREEN_HEIGHT, TFT_BG_COLOR);
-  tft.fillRect(0, SCREEN_HEIGHT - BOTTOM_EDGE_MASK_HEIGHT, SCREEN_WIDTH, BOTTOM_EDGE_MASK_HEIGHT, TFT_BG_COLOR);
 }
 
 void drawStaticFrame() {
@@ -57,7 +63,6 @@ void drawStaticFrame() {
   tft.println();
   tft.setTextColor(ST77XX_CYAN);
   tft.println(F("HX711:"));
-  maskDisplayEdges();
 }
 
 void drawReading(long rawValue, bool hx711Ready) {
@@ -76,8 +81,6 @@ void drawReading(long rawValue, bool hx711Ready) {
     tft.setTextColor(TFT_VALUE_ERROR_COLOR, TFT_BG_COLOR);
     tft.println(F("not ready"));
   }
-
-  maskDisplayEdges();
 }
 
 void setup() {
@@ -89,7 +92,7 @@ void setup() {
 
   SPI.begin(TFT_SCLK_PIN, -1, TFT_MOSI_PIN, TFT_CS_PIN);
   tft.initR(INITR_BLACKTAB);
-  tft.setRotation(1);
+  tft.applyPanelOffset(TFT_COL_START, TFT_ROW_START, TFT_ROTATION);
   drawStaticFrame();
 
   pinMode(HX711_DT_PIN, INPUT);
