@@ -20,15 +20,17 @@ constexpr long HX711_MIN_RAW = -8388608L;
 constexpr uint16_t TFT_BG_COLOR = ST77XX_BLACK;
 constexpr uint16_t TFT_VALUE_READY_COLOR = ST77XX_GREEN;
 constexpr uint16_t TFT_VALUE_ERROR_COLOR = ST77XX_RED;
+constexpr char TITLE_TEXT[] = "Smart Scale";
 constexpr uint8_t TFT_ROTATION = 1;
 constexpr int8_t TFT_COL_START = 2;
 constexpr int8_t TFT_ROW_START = 1;
+constexpr int16_t SCREEN_PADDING = 10;
 
 constexpr int16_t SCREEN_WIDTH = 160;
 constexpr int16_t SCREEN_HEIGHT = 128;
-constexpr int16_t VALUE_BOX_X = 0;
-constexpr int16_t VALUE_BOX_Y = 52;
-constexpr int16_t VALUE_BOX_W = SCREEN_WIDTH;
+constexpr int16_t VALUE_BOX_X = SCREEN_PADDING;
+constexpr int16_t VALUE_BOX_Y = 52 + SCREEN_PADDING;
+constexpr int16_t VALUE_BOX_W = SCREEN_WIDTH - (SCREEN_PADDING * 2);
 constexpr int16_t VALUE_BOX_H = 18;
 
 HX711 scale;
@@ -51,18 +53,18 @@ bool isSaturatedReading(long rawValue) {
 }
 
 void drawStaticFrame() {
+  int16_t titleX = 0;
+  int16_t titleY = 0;
+  uint16_t titleW = 0;
+  uint16_t titleH = 0;
+
   tft.fillScreen(TFT_BG_COLOR);
-  tft.setCursor(0, 0);
   tft.setTextWrap(false);
   tft.setTextColor(ST77XX_WHITE);
   tft.setTextSize(2);
-  tft.println(F("Hello"));
-  tft.println(F("World"));
-
-  tft.setTextSize(1);
-  tft.println();
-  tft.setTextColor(ST77XX_CYAN);
-  tft.println(F("HX711:"));
+  tft.getTextBounds(TITLE_TEXT, 0, 0, &titleX, &titleY, &titleW, &titleH);
+  tft.setCursor((SCREEN_WIDTH - titleW) / 2, SCREEN_PADDING);
+  tft.println(TITLE_TEXT);
 }
 
 void drawReading(long rawValue, bool hx711Ready) {
