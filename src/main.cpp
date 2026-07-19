@@ -117,7 +117,7 @@ void sleepUntilNextSample() {
   esp_sleep_disable_wakeup_source(ESP_SLEEP_WAKEUP_ALL);
 
   // Timer wake keeps sleep behavior deterministic even if HX711 DOUT stays HIGH.
-  esp_sleep_enable_timer_wakeup(static_cast<uint64_t>(SCREEN_REFRESH_MS) * 300000ULL);
+  esp_sleep_enable_timer_wakeup(static_cast<uint64_t>(SCREEN_REFRESH_MS) * 60000ULL);
 
   // Disable panel to save additional power while CPU sleeps.
   scale.power_down();
