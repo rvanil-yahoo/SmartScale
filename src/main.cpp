@@ -18,6 +18,7 @@ constexpr uint8_t TFT_SCLK_PIN = 19;
 
 constexpr uint16_t SCREEN_REFRESH_MS = 1000;
 constexpr uint16_t HX711_STARTUP_TIMEOUT_MS = 2000;
+constexpr uint8_t STABLE_SAMPLES_FOR_SLEEP = 10;
 constexpr long HX711_MAX_RAW = 8388607L;
 constexpr long HX711_MIN_RAW = -8388608L;
 constexpr float CAL_OFFSET_COUNTS = 1114690.18f;
@@ -50,6 +51,9 @@ public:
 };
 
 SmartScaleDisplay tft(TFT_CS_PIN, TFT_DC_PIN, TFT_RST_PIN);
+int32_t lastStableWeightLbs = 0;
+uint8_t stableSampleCount = 0;
+bool hasStableReference = false;
 
 void disableRadios() {
   esp_wifi_stop();
@@ -57,12 +61,17 @@ void disableRadios() {
   btStop();
 }
 
-void enterDeepSleepForNextSample() {
-  // HX711 DOUT goes LOW when conversion data is ready.
-  esp_sleep_enable_ext0_wakeup(static_cast<gpio_num_t>(HX711_DT_PIN), 0);
-  // Fallback wake in case HX711 ready edge is missed or sensor is disconnected.
-  esp_sleep_enable_timer_wakeup(static_cast<uint64_t>(SCREEN_REFRESH_MS) * 1000ULL);
-  esp_deep_sleep_start();
+void sleepUntilNextSample() {
+  // Reset wake sources before configuring this sleep cycle.
+  esp_sleep_disable_wakeup_source(ESP_SLEEP_WAKEUP_ALL);
+
+  // Timer wake keeps sleep behavior deterministic even if HX711 DOUT stays HIGH.
+  esp_sleep_enable_timer_wakeup(static_cast<uint64_t>(SCREEN_REFRESH_MS) * 60000ULL);
+
+  tft.enableDisplay(false);
+  esp_light_sleep_start();
+  tft.enableDisplay(true);
+  stableSampleCount = 0;
 }
 
 bool isSaturatedReading(long rawValue) {
@@ -151,6 +160,8 @@ void setup() {
 void loop() {
   const bool hx711Ready = scale.is_ready();
   long rawValue = 0;
+  bool hasComparableSample = false;
+  int32_t roundedPounds = 0;
 
   if (hx711Ready) {
     rawValue = scale.read_average(5);
@@ -160,13 +171,32 @@ void loop() {
       Serial.println(F("Check E+/E-/A+/A- wiring, load-cell combiner wiring, and HX711 supply voltage."));
     } else {
       const float pounds = rawToLbs(rawValue);
+      roundedPounds = static_cast<int32_t>(pounds + 0.5f);
+      hasComparableSample = true;
       Serial.println(pounds, 0);
     }
   } else {
     Serial.println(F("HX711 not ready"));
   }
 
+  if (hasComparableSample) {
+    if (!hasStableReference || roundedPounds != lastStableWeightLbs) {
+      lastStableWeightLbs = roundedPounds;
+      stableSampleCount = 1;
+      hasStableReference = true;
+    } else if (stableSampleCount < 255) {
+      stableSampleCount++;
+    }
+  } else {
+    hasStableReference = false;
+    stableSampleCount = 0;
+  }
+
   drawReading(rawValue, hx711Ready);
-  delay(40);
-  enterDeepSleepForNextSample();
+
+  if (stableSampleCount >= STABLE_SAMPLES_FOR_SLEEP) {
+    sleepUntilNextSample();
+  } else {
+    delay(SCREEN_REFRESH_MS);
+  }
 }
