@@ -10,7 +10,10 @@ The current firmware is optimized for low power:
 
 ## Hardware Wiring
 
-All red wires go to the HX711 input lines E-, E+, A-, A+. Black and white wires are cross joined.
+All red wires go to the HX711 input lines E-, E+, A-, A+. Black and white wires are cross joined. Note that red wires carry signal in this case, so be careful while soldering wires properly.
+
+![Fully Assembled](https://github.com/rvanil-yahoo/SmartScale/blob/main/20260719_132254.jpg)
+
 
 ### HX711
 - `DT` -> GPIO `34`
