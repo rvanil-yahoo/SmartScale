@@ -3,6 +3,9 @@
 #include <Adafruit_GFX.h>
 #include <Adafruit_ST7735.h>
 #include <HX711.h>
+#include <esp_bt.h>
+#include <esp_sleep.h>
+#include <esp_wifi.h>
 
 constexpr uint8_t HX711_DT_PIN = 34;
 constexpr uint8_t HX711_SCK_PIN = 21;
@@ -48,7 +51,19 @@ public:
 
 SmartScaleDisplay tft(TFT_CS_PIN, TFT_DC_PIN, TFT_RST_PIN);
 
-unsigned long lastRefreshAt = 0;
+void disableRadios() {
+  esp_wifi_stop();
+  esp_wifi_deinit();
+  btStop();
+}
+
+void enterDeepSleepForNextSample() {
+  // HX711 DOUT goes LOW when conversion data is ready.
+  esp_sleep_enable_ext0_wakeup(static_cast<gpio_num_t>(HX711_DT_PIN), 0);
+  // Fallback wake in case HX711 ready edge is missed or sensor is disconnected.
+  esp_sleep_enable_timer_wakeup(static_cast<uint64_t>(SCREEN_REFRESH_MS) * 1000ULL);
+  esp_deep_sleep_start();
+}
 
 bool isSaturatedReading(long rawValue) {
   return rawValue == HX711_MAX_RAW || rawValue == HX711_MIN_RAW;
@@ -101,6 +116,9 @@ void setup() {
   Serial.println();
   Serial.println(F("SmartScale booting"));
 
+  disableRadios();
+  Serial.println(F("WiFi and Bluetooth disabled"));
+
   SPI.begin(TFT_SCLK_PIN, -1, TFT_MOSI_PIN, TFT_CS_PIN);
   tft.initR(INITR_BLACKTAB);
   tft.applyPanelOffset(TFT_COL_START, TFT_ROW_START, TFT_ROTATION);
@@ -131,13 +149,6 @@ void setup() {
 }
 
 void loop() {
-  const unsigned long now = millis();
-  if (now - lastRefreshAt < SCREEN_REFRESH_MS) {
-    return;
-  }
-
-  lastRefreshAt = now;
-
   const bool hx711Ready = scale.is_ready();
   long rawValue = 0;
 
@@ -156,4 +167,6 @@ void loop() {
   }
 
   drawReading(rawValue, hx711Ready);
+  delay(40);
+  enterDeepSleepForNextSample();
 }
