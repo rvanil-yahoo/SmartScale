@@ -17,6 +17,7 @@ constexpr uint8_t TFT_DC_PIN = 4;
 constexpr uint8_t TFT_RST_PIN = 5;
 constexpr uint8_t TFT_MOSI_PIN = 18;
 constexpr uint8_t TFT_SCLK_PIN = 19;
+constexpr uint8_t TFT_BL_PIN = 15;
 
 // Timing and stability control.
 constexpr uint16_t SCREEN_REFRESH_MS = 1000;
@@ -76,6 +77,14 @@ uint8_t stableSampleCount = 0;
 bool hasStableReference = false;
 
 /*
+ * Controls TFT backlight state through a dedicated GPIO.
+ * Active HIGH is assumed for the configured backlight pin.
+ */
+void setBacklight(bool enabled) {
+  digitalWrite(TFT_BL_PIN, enabled ? HIGH : LOW);
+}
+
+/*
  * Powers down Wi-Fi and Bluetooth radios.
  * Called once at startup to reduce baseline power draw.
  */
@@ -97,11 +106,13 @@ void sleepUntilNextSample() {
   esp_sleep_enable_timer_wakeup(static_cast<uint64_t>(SCREEN_REFRESH_MS) * 60000ULL);
 
   // Disable panel to save additional power while CPU sleeps.
+  setBacklight(false);
   tft.enableDisplay(false);
   esp_light_sleep_start();
 
   // Re-enable panel and reset stability tracking after wake.
   tft.enableDisplay(true);
+  setBacklight(true);
   stableSampleCount = 0;
   hasStableReference = false;
 }
@@ -188,6 +199,9 @@ void setup() {
   Serial.println(F("WiFi and Bluetooth disabled"));
 
   // Initialize TFT SPI bus and panel orientation/offset.
+  pinMode(TFT_BL_PIN, OUTPUT);
+  setBacklight(true);
+
   SPI.begin(TFT_SCLK_PIN, -1, TFT_MOSI_PIN, TFT_CS_PIN);
   tft.initR(INITR_BLACKTAB);
   tft.applyPanelOffset(TFT_COL_START, TFT_ROW_START, TFT_ROTATION);
@@ -270,6 +284,7 @@ void loop() {
 
   // Enter sleep only after enough stable samples; otherwise continue active updates.
   if (stableSampleCount >= STABLE_SAMPLES_FOR_SLEEP) {
+    Serial.println(F("Entering sleep mode due to stable weight"));
     sleepUntilNextSample();
   } else {
     delay(SCREEN_REFRESH_MS);
