@@ -22,6 +22,7 @@ constexpr uint8_t TFT_BL_PIN = 15;
 // Timing and stability control.
 constexpr uint16_t SCREEN_REFRESH_MS = 1000;
 constexpr uint16_t HX711_STARTUP_TIMEOUT_MS = 2000;
+constexpr uint16_t HX711_WAKE_SETTLE_MS = 5;
 constexpr uint8_t STABLE_SAMPLES_FOR_SLEEP = 10;
 
 // HX711 special values indicating ADC rail saturation.
@@ -76,12 +77,25 @@ int32_t lastStableWeightLbs = 0;
 uint8_t stableSampleCount = 0;
 bool hasStableReference = false;
 
+// Tracks what value was last rendered to the TFT.
+int32_t lastDisplayedWeightLbs = 0;
+bool hasDisplayedWeight = false;
+
 /*
  * Controls TFT backlight state through a dedicated GPIO.
  * Active HIGH is assumed for the configured backlight pin.
  */
 void setBacklight(bool enabled) {
   digitalWrite(TFT_BL_PIN, enabled ? HIGH : LOW);
+}
+
+/*
+ * Controls TFT panel and backlight together.
+ * Keeps display power state consistent in one place.
+ */
+void setDisplayActive(bool enabled) {
+  tft.enableDisplay(enabled);
+  setBacklight(enabled);
 }
 
 /*
@@ -106,13 +120,13 @@ void sleepUntilNextSample() {
   esp_sleep_enable_timer_wakeup(static_cast<uint64_t>(SCREEN_REFRESH_MS) * 300000ULL);
 
   // Disable panel to save additional power while CPU sleeps.
-  setBacklight(false);
-  tft.enableDisplay(false);
+  scale.power_down();
+  setDisplayActive(false);
   esp_light_sleep_start();
 
-  // Re-enable panel and reset stability tracking after wake.
-  tft.enableDisplay(true);
-  setBacklight(true);
+  // Wake sensor path, but keep TFT off until value actually changes.
+  scale.power_up();
+  delay(HX711_WAKE_SETTLE_MS);
   stableSampleCount = 0;
   hasStableReference = false;
 }
@@ -187,52 +201,26 @@ void drawReading(long rawValue, bool hx711Ready) {
  * Brings up radios-off state, display, and HX711.
  */
 void setup() {
-  // Serial is kept for diagnostics and bring-up.
-  Serial.begin(115200);
   delay(250);
-
-  Serial.println();
-  Serial.println(F("SmartScale booting"));
 
   // Disable Wi-Fi/Bluetooth to reduce power in production mode.
   disableRadios();
-  Serial.println(F("WiFi and Bluetooth disabled"));
 
   // Initialize TFT SPI bus and panel orientation/offset.
   pinMode(TFT_BL_PIN, OUTPUT);
-  setBacklight(true);
 
   SPI.begin(TFT_SCLK_PIN, -1, TFT_MOSI_PIN, TFT_CS_PIN);
   tft.initR(INITR_BLACKTAB);
   tft.applyPanelOffset(TFT_COL_START, TFT_ROW_START, TFT_ROTATION);
-  drawStaticFrame();
+  setDisplayActive(false);
 
   // Initialize HX711 input and gain.
   pinMode(HX711_DT_PIN, INPUT);
   scale.begin(HX711_DT_PIN, HX711_SCK_PIN);
   scale.set_gain(128);
 
-  // Print startup diagnostics.
-  Serial.print(F("HX711 pins DT="));
-  Serial.print(HX711_DT_PIN);
-  Serial.print(F(" SCK="));
-  Serial.println(HX711_SCK_PIN);
-  Serial.print(F("Calibration offset="));
-  Serial.println(CAL_OFFSET_COUNTS, 2);
-  Serial.print(F("Calibration counts/lb="));
-  Serial.println(CAL_COUNTS_PER_LB, 4);
-
   // Wait briefly for HX711 to indicate first data-ready.
-  const bool hx711Ready = scale.wait_ready_timeout(HX711_STARTUP_TIMEOUT_MS);
-  if (hx711Ready) {
-    Serial.println(F("HX711 ready"));
-  } else {
-    Serial.println(F("HX711 not ready after startup timeout"));
-    Serial.println(F("Check HX711 power, DT/SCK wiring, and common ground."));
-  }
-
-  // Render first reading/status line.
-  drawReading(0, hx711Ready);
+  scale.wait_ready_timeout(HX711_STARTUP_TIMEOUT_MS);
 }
 
 /*
@@ -245,28 +233,27 @@ void loop() {
   long rawValue = 0;
   bool hasComparableSample = false;
   int32_t roundedPounds = 0;
+  bool displayValueChanged = false;
 
   if (hx711Ready) {
     rawValue = scale.read_average(5);
 
     // Detect fault values before converting to pounds.
     if (isSaturatedReading(rawValue)) {
-      Serial.print(F("HX711 raw saturated: "));
-      Serial.println(rawValue);
-      Serial.println(F("Check E+/E-/A+/A- wiring, load-cell combiner wiring, and HX711 supply voltage."));
     } else {
       // Convert to pounds and quantize to integer for stability tracking.
       const float pounds = rawToLbs(rawValue);
       roundedPounds = static_cast<int32_t>(pounds + 0.5f);
       hasComparableSample = true;
-      Serial.println(pounds, 0);
     }
-  } else {
-    Serial.println(F("HX711 not ready"));
   }
 
   // Track how many consecutive samples produce the same rounded value.
   if (hasComparableSample) {
+    if (!hasDisplayedWeight || roundedPounds != lastDisplayedWeightLbs) {
+      displayValueChanged = true;
+    }
+
     if (!hasStableReference || roundedPounds != lastStableWeightLbs) {
       lastStableWeightLbs = roundedPounds;
       stableSampleCount = 1;
@@ -279,12 +266,17 @@ void loop() {
     stableSampleCount = 0;
   }
 
-  // Update on-screen value/state.
-  drawReading(rawValue, hx711Ready);
+  // Power the TFT only when a new value should be shown.
+  if (displayValueChanged) {
+    setDisplayActive(true);
+    drawStaticFrame();
+    drawReading(rawValue, hx711Ready);
+    lastDisplayedWeightLbs = roundedPounds;
+    hasDisplayedWeight = true;
+  }
 
   // Enter sleep only after enough stable samples; otherwise continue active updates.
   if (stableSampleCount >= STABLE_SAMPLES_FOR_SLEEP) {
-    Serial.println(F("Entering sleep mode due to stable weight"));
     sleepUntilNextSample();
   } else {
     delay(SCREEN_REFRESH_MS);
