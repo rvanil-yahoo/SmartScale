@@ -17,6 +17,8 @@ constexpr uint16_t SCREEN_REFRESH_MS = 1000;
 constexpr uint16_t HX711_STARTUP_TIMEOUT_MS = 2000;
 constexpr long HX711_MAX_RAW = 8388607L;
 constexpr long HX711_MIN_RAW = -8388608L;
+constexpr float CAL_OFFSET_COUNTS = 1114690.18f;
+constexpr float CAL_COUNTS_PER_LB = 9169.7606f;
 constexpr uint16_t TFT_BG_COLOR = ST77XX_BLACK;
 constexpr uint16_t TFT_VALUE_READY_COLOR = ST77XX_GREEN;
 constexpr uint16_t TFT_VALUE_ERROR_COLOR = ST77XX_RED;
@@ -29,9 +31,9 @@ constexpr int16_t SCREEN_PADDING = 10;
 constexpr int16_t SCREEN_WIDTH = 160;
 constexpr int16_t SCREEN_HEIGHT = 128;
 constexpr int16_t VALUE_BOX_X = SCREEN_PADDING;
-constexpr int16_t VALUE_BOX_Y = 52 + SCREEN_PADDING;
+constexpr int16_t VALUE_BOX_Y = 32 + SCREEN_PADDING;
 constexpr int16_t VALUE_BOX_W = SCREEN_WIDTH - (SCREEN_PADDING * 2);
-constexpr int16_t VALUE_BOX_H = 18;
+constexpr int16_t VALUE_BOX_H = 30;
 
 HX711 scale;
 class SmartScaleDisplay : public Adafruit_ST7735 {
@@ -50,6 +52,11 @@ unsigned long lastRefreshAt = 0;
 
 bool isSaturatedReading(long rawValue) {
   return rawValue == HX711_MAX_RAW || rawValue == HX711_MIN_RAW;
+}
+
+float rawToLbs(long rawValue) {
+  const float pounds = (static_cast<float>(rawValue) - CAL_OFFSET_COUNTS) / CAL_COUNTS_PER_LB;
+  return (pounds < 0.0f) ? 0.0f : pounds;
 }
 
 void drawStaticFrame() {
@@ -74,7 +81,14 @@ void drawReading(long rawValue, bool hx711Ready) {
   tft.setTextWrap(false);
 
   if (hx711Ready && !isSaturatedReading(rawValue)) {
+    const float pounds = rawToLbs(rawValue);
     tft.setTextColor(TFT_VALUE_READY_COLOR, TFT_BG_COLOR);
+    tft.print(F("Wt: "));
+    tft.print(pounds, 2);
+    tft.println(F(" lb"));
+
+    tft.setTextColor(ST77XX_CYAN, TFT_BG_COLOR);
+    tft.print(F("Raw: "));
     tft.println(rawValue);
   } else if (hx711Ready) {
     tft.setTextColor(TFT_VALUE_ERROR_COLOR, TFT_BG_COLOR);
@@ -105,6 +119,10 @@ void setup() {
   Serial.print(HX711_DT_PIN);
   Serial.print(F(" SCK="));
   Serial.println(HX711_SCK_PIN);
+  Serial.print(F("Calibration offset="));
+  Serial.println(CAL_OFFSET_COUNTS, 2);
+  Serial.print(F("Calibration counts/lb="));
+  Serial.println(CAL_COUNTS_PER_LB, 4);
 
   const bool hx711Ready = scale.wait_ready_timeout(HX711_STARTUP_TIMEOUT_MS);
   if (hx711Ready) {
@@ -135,8 +153,8 @@ void loop() {
       Serial.println(rawValue);
       Serial.println(F("Check E+/E-/A+/A- wiring, load-cell combiner wiring, and HX711 supply voltage."));
     } else {
-      Serial.print(F("HX711 raw: "));
-      Serial.println(rawValue);
+      const float pounds = rawToLbs(rawValue);
+      Serial.println(pounds, 0);
     }
   } else {
     Serial.println(F("HX711 not ready"));
