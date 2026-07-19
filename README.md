@@ -1,6 +1,6 @@
 # SmartScale (ESP32 + HX711 + ST7735)
 
-This is an old fitbit smart scale that is constantly having issues connecting to wifi. Gutted out the internals and replaced it with ESP32-based firmware that reads an HX711 load-cell amplifier and shows weight on an ST7735 TFT. 
+This is an old fitbit smart scale that is constantly having issues connecting to wifi. Gutted out the internals and replaced it with ESP32-based firmware that reads an HX711 load-cell amplifier and shows weight on an ST7735 TFT. It also has a 3000ah 3.7v single cell lipo rechargeable battery for power.
 
 The current firmware is optimized for low power:
 - Wi-Fi and Bluetooth are disabled at startup
