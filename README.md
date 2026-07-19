@@ -1,6 +1,6 @@
 # SmartScale (ESP32 + HX711 + ST7735)
 
-SmartScale is an ESP32-based scale firmware that reads an HX711 load-cell amplifier and shows weight on an ST7735 TFT.
+This is an old fitbit smart scale that is constantly having issues connecting to wifi. Gutted out the internals and replaced it with ESP32-based firmware that reads an HX711 load-cell amplifier and shows weight on an ST7735 TFT. 
 
 The current firmware is optimized for low power:
 - Wi-Fi and Bluetooth are disabled at startup
@@ -9,6 +9,8 @@ The current firmware is optimized for low power:
 - TFT only powers up and redraws when the detected rounded weight changes
 
 ## Hardware Wiring
+
+All red wires go to the HX711 input lines E-, E+, A-, A+. Black and white wires are cross joined.
 
 ### HX711
 - `DT` -> GPIO `34`
