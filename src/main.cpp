@@ -77,19 +77,14 @@ void drawStaticFrame() {
 void drawReading(long rawValue, bool hx711Ready) {
   tft.fillRect(VALUE_BOX_X, VALUE_BOX_Y, VALUE_BOX_W, VALUE_BOX_H, TFT_BG_COLOR);
   tft.setCursor(VALUE_BOX_X, VALUE_BOX_Y);
-  tft.setTextSize(1);
+  tft.setTextSize(3);
   tft.setTextWrap(false);
 
   if (hx711Ready && !isSaturatedReading(rawValue)) {
     const float pounds = rawToLbs(rawValue);
     tft.setTextColor(TFT_VALUE_READY_COLOR, TFT_BG_COLOR);
-    tft.print(F("Wt: "));
-    tft.print(pounds, 2);
+    tft.print(pounds, 0);
     tft.println(F(" lb"));
-
-    tft.setTextColor(ST77XX_CYAN, TFT_BG_COLOR);
-    tft.print(F("Raw: "));
-    tft.println(rawValue);
   } else if (hx711Ready) {
     tft.setTextColor(TFT_VALUE_ERROR_COLOR, TFT_BG_COLOR);
     tft.println(F("saturated"));
