@@ -30,8 +30,10 @@ constexpr long HX711_MAX_RAW = 8388607L;
 constexpr long HX711_MIN_RAW = -8388608L;
 
 // Linear calibration model: pounds = (raw - offset) / counts_per_lb.
-constexpr float CAL_OFFSET_COUNTS = 1114690.18f;
+constexpr float CAL_OFFSET_COUNTS = 1126000.0f;
 constexpr float CAL_COUNTS_PER_LB = 9169.7606f;
+constexpr float CAL_SCALE_TRIM = 1.025f;
+constexpr float ZERO_HOLD_MAX_LB = 1.0f;
 
 // UI colors and title.
 constexpr uint16_t TFT_BG_COLOR = ST77XX_BLACK;
@@ -117,7 +119,7 @@ void sleepUntilNextSample() {
   esp_sleep_disable_wakeup_source(ESP_SLEEP_WAKEUP_ALL);
 
   // Timer wake keeps sleep behavior deterministic even if HX711 DOUT stays HIGH.
-  esp_sleep_enable_timer_wakeup(static_cast<uint64_t>(SCREEN_REFRESH_MS) * 60000ULL);
+  esp_sleep_enable_timer_wakeup(static_cast<uint64_t>(SCREEN_REFRESH_MS) * 5000ULL);
 
   // Disable panel to save additional power while CPU sleeps.
   scale.power_down();
@@ -144,7 +146,11 @@ bool isSaturatedReading(long rawValue) {
  * Negative values are clamped so the UI never shows below zero.
  */
 float rawToLbs(long rawValue) {
-  const float pounds = (static_cast<float>(rawValue) - CAL_OFFSET_COUNTS) / CAL_COUNTS_PER_LB;
+  const float pounds = (static_cast<float>(rawValue) - CAL_OFFSET_COUNTS) / (CAL_COUNTS_PER_LB * CAL_SCALE_TRIM);
+  if (pounds < ZERO_HOLD_MAX_LB) {
+    return 0.0f;
+  }
+
   return (pounds < 0.0f) ? 0.0f : pounds;
 }
 
@@ -182,8 +188,9 @@ void drawReading(long rawValue, bool hx711Ready) {
   // Show calculated weight when data is valid.
   if (hx711Ready && !isSaturatedReading(rawValue)) {
     const float pounds = rawToLbs(rawValue);
+    const int32_t displayPounds = static_cast<int32_t>(pounds);
     tft.setTextColor(TFT_VALUE_READY_COLOR, TFT_BG_COLOR);
-    tft.print(pounds, 0);
+    tft.print(displayPounds);
     tft.println(F(" lb"));
 
   // Show sensor fault states when reading is not usable.
@@ -241,9 +248,9 @@ void loop() {
     // Detect fault values before converting to pounds.
     if (isSaturatedReading(rawValue)) {
     } else {
-      // Convert to pounds and quantize to integer for stability tracking.
+      // Convert to pounds and floor to integer for stability tracking.
       const float pounds = rawToLbs(rawValue);
-      roundedPounds = static_cast<int32_t>(pounds + 0.5f);
+      roundedPounds = static_cast<int32_t>(pounds);
       hasComparableSample = true;
     }
   }
